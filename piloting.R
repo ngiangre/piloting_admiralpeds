@@ -23,7 +23,7 @@ datanames |>
     )
 
 
-# Trying out some function examples ----------------------------------------
+# derive_params_growth_height examples ----------------------------------------
 
 library(dplyr)
 library(lubridate)
@@ -38,70 +38,103 @@ advs <- dm_peds %>%
         BRTHDT = ymd(BRTHDTC)
     ) %>%
     derive_vars_duration(
-        new_var = AGECUR_D,
-        new_var_unit = CURU_D,
+        new_var = AAGECUR,
+        new_var_unit = AAGECURU,
         start_date = BRTHDT,
         end_date = VSDT,
-        out_unit = "days",
-        trunc_out = FALSE
-    ) %>%
-    derive_vars_duration(
-        new_var = AGECUR_M,
-        new_var_unit = CURU_M,
-        start_date = BRTHDT,
-        end_date = VSDT,
-        out_unit = "months",
-        trunc_out = FALSE
-    ) %>%
-    mutate(
-        AGECUR = ifelse(AGECUR_D >= 365.25 * 2, AGECUR_M, AGECUR_D),
-        AGECURU = ifelse(AGECUR_D >= 365.25 * 2, CURU_M, CURU_D)
+        out_unit = "days"
     )
 
-#' metadata is in months
-cdc_meta_criteria <- admiralpeds::cdc_wtage %>%
-    mutate(
-        age_unit = "months",
-        SEX = ifelse(SEX == 1, "M", "F")
+heights <- vs_peds %>%
+    filter(VSTESTCD == "HEIGHT") %>%
+    select(USUBJID, VSSTRESN, VSSTRESU, VSDTC) %>%
+    rename(
+        HGTTMP = VSSTRESN,
+        HGTTMPU = VSSTRESU
     )
 
-#' metadata is in days
-who_meta_criteria <- bind_rows(
-    (admiralpeds::who_wt_for_age_boys %>%
+advs <- advs %>%
+    right_join(., heights, by = c("USUBJID", "VSDTC"))
+
+advs_under2 <- advs %>%
+    filter(AAGECUR < 730)
+
+advs_over2 <- advs %>%
+    filter(AAGECUR >= 730.5)
+
+who_under2 <- bind_rows(
+    (admiralpeds::who_wt_for_lgth_boys %>%
          mutate(
              SEX = "M",
-             age_unit = "days"
+             height_unit = "cm"
          )
     ),
-    (admiralpeds::who_wt_for_age_girls %>%
+    (admiralpeds::who_wt_for_lgth_girls %>%
          mutate(
              SEX = "F",
-             age_unit = "days"
+             height_unit = "cm"
          )
     )
 ) %>%
-    rename(AGE = Day)
+    rename(
+        HEIGHT_LENGTH = Length,
+        HEIGHT_LENGTHU = height_unit
+    )
 
-criteria <- bind_rows(
-    cdc_meta_criteria,
-    who_meta_criteria
+who_over2 <- bind_rows(
+    (admiralpeds::who_wt_for_ht_boys %>%
+         mutate(
+             SEX = "M",
+             height_unit = "cm"
+         )
+    ),
+    (admiralpeds::who_wt_for_ht_girls %>%
+         mutate(
+             SEX = "F",
+             height_unit = "cm"
+         )
+    )
 ) %>%
-    rename(AGEU = age_unit)
+    rename(
+        HEIGHT_LENGTH = Height,
+        HEIGHT_LENGTHU = height_unit
+    )
 
-derive_params_growth_age(
-    advs,
+
+advs_under2 <- derive_params_growth_height(
+    advs_under2,
     sex = SEX,
-    age = AGECUR,
-    age_unit = AGECURU,
-    meta_criteria = criteria,
+    height = HGTTMP,
+    height_unit = HGTTMPU,
+    meta_criteria = who_under2,
     parameter = VSTESTCD == "WEIGHT",
     analysis_var = VSSTRESN,
     set_values_to_sds = exprs(
-        PARAMCD = "WGASDS",
-        PARAM = "Weight-for-age z-score"
+        PARAMCD = "WGHSDS",
+        PARAM = "Weight-for-height z-score"
     ),
     set_values_to_pctl = exprs(
-        PARAMCD = "WGAPCTL",
-        PARAM = "Weight-for-age percentile"
+        PARAMCD = "WGHPCTL",
+        PARAM = "Weight-for-height percentile"
     )
 )
+
+advs_over2 <- derive_params_growth_height(
+    advs_over2,
+    sex = SEX,
+    height = HGTTMP,
+    height_unit = HGTTMPU,
+    meta_criteria = who_over2,
+    parameter = VSTESTCD == "WEIGHT",
+    analysis_var = VSSTRESN,
+    set_values_to_sds = exprs(
+        PARAMCD = "WGHSDS",
+        PARAM = "Weight-for-height z-score"
+    ),
+    set_values_to_pctl = exprs(
+        PARAMCD = "WGHPCTL",
+        PARAM = "Weight-for-height percentile"
+    )
+)
+
+bind_rows(advs_under2, advs_over2)
